@@ -1,0 +1,10 @@
+<launch>
+    <node pkg="service_communication" name="servo_controller" type="servo_controller.py" output="screen"/>
+
+    <node pkg="service_communication" name="ch00" type="ch00.py" output="screen"/>
+    <node pkg="service_communication" name="ch01" type="ch01.py" output="screen"/>
+    <node pkg="service_communication" name="ch02" type="ch02.py" output="screen"/>
+    <node pkg="service_communication" name="ch03" type="ch03.py" output="screen"/>
+    <node pkg="service_communication" name="ch04" type="ch04.py" output="screen"/>
+    <node pkg="service_communication" name="ch05" type="ch05.py" output="screen"/>
+</launch>

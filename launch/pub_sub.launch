@@ -1,0 +1,23 @@
+<launch>
+    <node pkg="service_communication" name="publisher" type="pub.py" output="screen"/>
+
+    <node pkg="service_communication" name="listener00" type="sub.py" output="screen"/>
+    <node pkg="service_communication" name="listener01" type="sub.py" output="screen"/>
+    <node pkg="service_communication" name="listener02" type="sub.py" output="screen"/>
+    <node pkg="service_communication" name="listener03" type="sub.py" output="screen"/>
+    <node pkg="service_communication" name="listener04" type="sub.py" output="screen"/>
+    <node pkg="service_communication" name="listener05" type="sub.py" output="screen"/>
+
+    <!--    <node pkg="service_communication" name="listener00" type="sub.py" arg="00" output="screen"/>-->
+    <!--    <node pkg="service_communication" name="listener01" type="sub.py" arg="01" output="screen"/>-->
+    <!--    <node pkg="service_communication" name="listener02" type="sub.py" arg="02" output="screen"/>-->
+    <!--    <node pkg="service_communication" name="listener03" type="sub.py" arg="03" output="screen"/>-->
+    <!--    <node pkg="service_communication" name="listener04" type="sub.py" arg="04" output="screen"/>-->
+    <!--    <node pkg="service_communication" name="listener05" type="sub.py" arg="05" output="screen"/>-->
+
+    <!--    <node pkg="service_communication" name="listener01" type="sub01.py" output="screen"/>-->
+    <!--    <node pkg="service_communication" name="listener02" type="sub02.py" output="screen"/>-->
+    <!--    <node pkg="service_communication" name="listener03" type="sub03.py" output="screen"/>-->
+    <!--    <node pkg="service_communication" name="listener04" type="sub04.py" output="screen"/>-->
+    <!--    <node pkg="service_communication" name="listener05" type="sub05.py" output="screen"/>-->
+</launch>
