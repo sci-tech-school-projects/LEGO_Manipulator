@@ -6,11 +6,9 @@ import Adafruit_PCA9685
 import logging
 import numpy as np
 from scipy.stats import norm
+from log_manager import Log_Manager
 
-logger = logging.getLogger('LoggingTest')
-logger.setLevel(40)
-sh = logging.StreamHandler()
-logger.addHandler(sh)
+Log = Log_Manager()
 
 
 class Node():
@@ -26,15 +24,20 @@ class Node():
     node_name = ''
 
     def __init__(self):
-        self.pwm = Adafruit_PCA9685.PCA9685()
-        self.pwm.set_pwm_freq(60)
         self._get_channel_number()
+        if self.ch != None or self.ch != 'cher':
+            self.pwm = Adafruit_PCA9685.PCA9685()
+            self.pwm.set_pwm_freq(60)
 
     def _get_channel_number(self):
-        _ch = sys.argv[1]
-        self.ch = (_ch[-2:len(_ch)])
-        self.node_name = 'ch' + self.ch
-        print('[{}] Init ch {}'.format(self.node_name, self.ch))
+        try:
+            _ch = sys.argv[1]
+            self.ch = (_ch[-2:len(_ch)])
+            self.node_name = 'ch' + self.ch
+            print('[{}] Init ch {}'.format(self.node_name, self.ch))
+        except IndexError:
+            self.ch = None
+            self.node_name = None
 
     def Loop(self):
         rospy.init_node('listener' + self.ch, anonymous=True)
@@ -42,72 +45,77 @@ class Node():
         rospy.spin()
 
     def Call_service(self, data):
-        try:
-            node_name_in_msg, def_from, deg_to, pitch, sleep_sec = self.__parse_message(data.data)
-            logger.log(50, '[{}] parse_message message {}'.format(self.node_name, data.data))
-            logger.log(50, '[{}] {} {} {} {} '.format(self.node_name, def_from, deg_to, pitch, sleep_sec))
-            if self.node_name == node_name_in_msg:
-                # self._smooth_move(self.ch, def_from, deg_to, pitch, sleep_sec)
-                if self.node_name != 'ch00':
-                    self._smooth_move(int(self.ch), def_from, deg_to, pitch, sleep_sec)
-                else:
-                    self.__quick_move(int(self.ch), def_from, deg_to, pitch)
+        def __parse_message(self, message):
+            [node_name, def_from, deg_to, pitch, sleep_sec] = message.split(',')
+            return node_name, int(def_from), int(deg_to), int(pitch), float(sleep_sec)
 
+        def __smooth_move(self, ch, deg_from, deg_to, pitch, sleep_sec):
+            ch_num = int(ch)
+            pulses, pitchs = self.Deg_To_Pulse(deg_from, deg_to, pitch)
+            if pulses[0] - pulses[1] != 0 or len(pulses) != 0:
+                for i, pulse in enumerate(pulses):
+                    if i == len(pulses) - 1:
+                        break
+                    for j in range(pulses[i], pulses[i + 1], pitchs[i]):
+                        self.pwm.set_pwm(ch_num, 0, j)
+                        rospy.sleep(sleep_sec)
+
+        def __quick_move(self, ch_int, deg_from, deg_to, pitch):
+            pulses, pitchs = self.Deg_To_Pulse(deg_from, deg_to, pitch)
+            pulse = pulses[-1] - pitch
+            Log.intervally(self.node_name, 20,
+                           '[{}] node_name pulse {} {}'.format(self.node_name, ch_int, pulse, ))
+            self.pwm.set_pwm(ch_int, 0, pulse)
+
+        try:
+            node_name_in_msg, def_from, deg_to, pitch, sleep_sec = __parse_message(self, data.data)
+            Log.intervally(self.node_name, 50, '[{}] parse_message message {}'.format(self.node_name, data.data))
+            Log.intervally(self.node_name, 50,
+                           '[{}] {} {} {} {} '.format(self.node_name, def_from, deg_to, pitch, sleep_sec))
+            if self.node_name == node_name_in_msg:
+                # __smooth_move(self, int(self.ch), def_from, deg_to, pitch, sleep_sec)
+                if self.node_name != 'ch00':
+                    __smooth_move(self, int(self.ch), def_from, deg_to, pitch, sleep_sec)
+                else:
+                    __quick_move(self, int(self.ch), def_from, deg_to, pitch)
+                    # __smooth_move(self, int(self.ch), def_from, deg_to, pitch, sleep_sec)
         except rospy.ServiceException as  e:
             print("Service call failed: %s" % e)
 
-    def __parse_message(self, message):
-        [node_name, def_from, deg_to, pitch, sleep_sec] = message.split(',')
-        return node_name, int(def_from), int(deg_to), int(pitch), float(sleep_sec)
+    def Deg_To_Pulse(self, deg_from, deg_to, pitch):
+        def calc_remainder(self, _pul_to, _pul_from, divide_num):
+            remainder = 0 if divide_num == 0 else int((_pul_to - _pul_from) % divide_num)
+            return remainder
 
-    def _smooth_move(self, ch, deg_from, deg_to, pitch, sleep_sec):
-        ch_num = int(ch)
-        pul_from, pul_to, pitch = self.__deg_to_pulse(deg_from, deg_to, pitch)
-        if pitch != 0:
-            for i in range(pul_from, pul_to, pitch):
-                self.pwm.set_pwm(ch_num, 0, i)
-                rospy.sleep(sleep_sec)
+        def culc_pulse_pith_set(pul_to, pul_from, remainder, pitch):
+            if (pul_to - pul_from) >= 0:
+                froms, pitchs = __calc_smooth_pulse(pul_to, pul_from, remainder, pitch)
+            else:
+                pitch = -pitch
+                froms, pitchs = __calc_smooth_pulse(pul_from, pul_to, remainder, pitch)
+            return froms, pitchs
 
-    def __deg_to_pulse(self, deg_from, deg_to, pitch):
+        def __calc_smooth_pulse(smaller, larger, remainder, pitch):
+            quarter = (larger - smaller) // 4
+            current_pulse = smaller
+            _1st_quarter_pulse = current_pulse + quarter
+            _2nd_quarter_pulse = _1st_quarter_pulse + quarter
+            _3rd_quarter_pulse = _2nd_quarter_pulse + quarter
+            _4th_quarter_pulse = _3rd_quarter_pulse + quarter + remainder
+            froms = [current_pulse, _1st_quarter_pulse, _2nd_quarter_pulse, _3rd_quarter_pulse, _4th_quarter_pulse]
+            pitchs = [pitch // 4, pitch // 2, pitch // 2, pitch // 4]
+            return froms, pitchs
+
         _pul_from = self.pulse['0_deg'] + (float(deg_from) * self._1_deg)
         _pul_to = self.pulse['0_deg'] + (float(deg_to) * self._1_deg)
         diff = _pul_to - _pul_from
         divide_num = diff / self._1_deg
-        remainder, pitch = self.___calc_remainder(_pul_to, _pul_from, divide_num)
+        remainder = calc_remainder(self, _pul_to, _pul_from, divide_num)
+        Log.intervally(self.node_name, 40, "{} {} {}".format(type(_pul_from), type(remainder), type(pitch)))
         pul_from = int(_pul_from) + remainder + pitch
         pul_to = int(_pul_to) + pitch
-
-        if self.node_name == 'ch02':
-            logger.log(50,
-                       '[{}] _pul_from, _pul_to, pitch : {} {} {}'.format(self.node_name, _pul_from, _pul_to, pitch))
-            logger.log(50, '[{}] diff, divide_num, remainder : {} {} {}'.format(self.node_name, diff, divide_num,
-                                                                                remainder))
-            logger.log(50, '[{}] deg_from, deg_to :  {} {}'.format(self.node_name, deg_from, deg_to))
-            logger.log(50, '[{}] pul_from, pul_to, pitch : {} {} {}'.format(self.node_name, pul_from, pul_to, pitch))
-
-        return pul_from, pul_to, pitch
-
-    def ___calc_remainder(self, _pul_to, _pul_from, divide_num):
-        remainder = 0
-        pitch = 0
-        if divide_num == 0:
-            remainder = 0
-            pitch = 0
-        else:
-            remainder = int((_pul_to - _pul_from) % divide_num)
-            # pitch = int((_pul_to - _pul_from) / divide_num)
-            if (_pul_to - _pul_from) >= 0:
-                pitch = 5
-            else:
-                pitch = -5
-        return remainder, pitch
-
-    def __quick_move(self, ch_int, deg_from, deg_to, pitch):
-        pul_from, pul_to, pitch = self.__deg_to_pulse(deg_from, deg_to, pitch)
-        pulse = pul_to - pitch
-        logger.log(20, '[{}] node_name pulse {} {}'.format(self.node_name, ch_int, pulse, ))
-        self.pwm.set_pwm(ch_int, 0, pulse)
-
+        pulses, pitchs = culc_pulse_pith_set(pul_to, pul_from, remainder, pitch)
+        return pulses, pitchs
 
 
 if __name__ == "__main__":

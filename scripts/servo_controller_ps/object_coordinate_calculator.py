@@ -1,14 +1,8 @@
-#!/usr/bin/env python3
-import math
+#!/usr/bin/python3
 from math import degrees, acos, floor
-import numpy as np
 
 
 class Object_Coordinate_Calculator():
-    # pixel_per_mm = {}
-    # target_abs_mm = {}
-    # target_rel_mm = {}
-    # target_rel_vector = {}
 
     def __init__(self):
         """"""

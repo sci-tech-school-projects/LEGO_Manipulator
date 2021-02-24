@@ -4,32 +4,40 @@ import rospy
 from std_msgs.msg import String
 from joint_degree_calculator import Joint_Degree_Calculator
 import logging
+from sub import Node
 import cv2
+from log_manager import Log_Manager
+# from global_settings import *
 
-print(sys.version)
+joint_degree = Joint_Degree_Calculator()
+node = Node()
+Log = Log_Manager()
 
 logger = logging.getLogger('LoggingTest')
-logger.setLevel(20)
+logger.setLevel(40)
 sh = logging.StreamHandler()
 logger.addHandler(sh)
 
 
 class Servo_Controller():
+    # x y x = height
     xyz = [0.0, 0.0, 0.0]
     nodes = []
-    hz = 0
     published_nodes = {'ch00': False, 'ch01': False, 'ch02': False, 'ch03': False, 'ch04': False, 'ch05': False, }
-    _froms = {'ch00': 180, 'ch01': 90, 'ch02': 90, 'ch03': 90, 'ch04': 90, 'ch05': 90}
-    _tos = {'ch00': 180, 'ch01': 90, 'ch02': 90, 'ch03': 90, 'ch04': 90, 'ch05': 90}
+    current_pos = {'ch00': 135, 'ch01': 90, 'ch02': 90, 'ch03': 90, 'ch04': 90, 'ch05': 90}
+    next_pos = {'ch00': 90, 'ch01': 90, 'ch02': 90, 'ch03': 90, 'ch04': 90, 'ch05': 90}
 
-    arm_states = ['targeting', 'grip-holding', 'reaching', 'grip-releasing']
-    arm_states_only_grip = [arm_states[1], arm_states[3]]
+    arm_states = ['approaching', 'targeting', 'grip-holding', 'leaving','reaching', 'grip-releasing']
+    arm_states_only_grip = ['grip-holding', 'grip-releasing']
     arm_state = arm_states[-1]
+
+    pitch = str(4)
+    sleep_sec = str(0.01)
+    ch = 'pub'
+    waiting_time = 0
 
     def __init__(self):
         print('***** Init {}'.format(os.path.basename(__file__)))
-        self.joint_degree = Joint_Degree_Calculator()
-
         rospy.init_node('publisher', anonymous=True)
         for i in range(6):
             ch = '{:0=2}'.format(i)
@@ -37,87 +45,102 @@ class Servo_Controller():
             self.nodes.append(pub)
 
     def Main(self, ):
-        self.hz = 1526
-        rate = rospy.Rate(self.hz)
+        hz = 1526
+        rate = rospy.Rate(hz)
         while not rospy.is_shutdown():
             self.Handle()
             rate.sleep()
 
     def Handle(self):
+        def compile_message(self, node_name):
+            _from = str(self.current_pos[node_name])
+            _to = str(self.next_pos[node_name])
+            message = ','.join([node_name, _from, _to, self.pitch, self.sleep_sec])
+            return message
+
         for i in range(6):
             ch = 'ch' + '{:0=2}'.format(i)
-            message = self.compile_message(ch)
-            if self._froms[ch] != self._tos[ch]:
+            message = compile_message(self, ch)
+            if self.current_pos[ch] != self.next_pos[ch]:
                 self.nodes[i].publish(message)
             self.published_nodes[ch] = True
 
             if False not in self.published_nodes.values():
                 self.go_to_next_state()
+                rospy.sleep(self.calc_waiting_time_to_next_publish())
+
             else:
                 if self.published_nodes['ch00'] and (self.arm_state in self.arm_states_only_grip):
                     self.go_to_next_state()
+                    rospy.sleep(self.calc_waiting_time_to_next_publish())
                 else:
                     pass
-        self.__logger_1(20, 'Sub')
-
-    def compile_message(self, node_name):
-        _from = str(self._froms[node_name])
-        _to = str(self._tos[node_name])
-        pitch = str(1)
-        # sleep_sec = str(0.02)
-        sleep_sec = str(0.1)
-        message = ','.join([node_name, _from, _to, pitch, sleep_sec])
-        return message
+        # sys.exit()
 
     def go_to_next_state(self):
-        def __what_is_next_arm_state(self):
+        def __get_next_arm_state(self):
             idx = self.arm_states.index(self.arm_state)
-            if idx == len(self.arm_states) - 1:
-                idx = 0
-            else:
-                idx += 1
-            self.arm_state = self.arm_states[idx]
-
-        def __swap_from_to(self):
-            self._froms = self._tos
-
-        def __go_to_goal_box(self):
-            _xyz = self.xyz
-            self.xyz = [10.0, _xyz[1] + 50.0, _xyz[2] - random.randrange(90.0, 110.0)]
+            next_index = 0
+            if idx != len(self.arm_states) - 1:
+                next_index = idx + 1
+            self.arm_state = self.arm_states[next_index]
 
         def __generate_xyz(self):
-            rospy.sleep(1)
-            if self.arm_state == self.arm_states[0]:
-                rospy.sleep(1)
-                xyz = [120.0, 5.0, 0.0]
-                self.xyz = [int(xyz[0]), int(xyz[1]), int(xyz[2])]
-            elif self.arm_state == self.arm_states[1]:
-                rospy.sleep(0.5)
+            if self.arm_state == 'approaching':
+                target_coordinates = [100.0, 50.0, 50.0]
+                self.xyz = [int(target_coordinates[0]), int(target_coordinates[1]), int(target_coordinates[2])]
+            elif self.arm_state == 'targeting':
+                target_coordinates = [100.0, 100.0, 50.0]
+                self.xyz = [int(target_coordinates[0]), int(target_coordinates[1]), int(target_coordinates[2])]
+            elif self.arm_state == 'grip-holding':
+                rospy.sleep(2)
                 pass
-            elif self.arm_state == self.arm_states[2]:
-                rospy.sleep(1)
-                __go_to_goal_box(self)
-            elif self.arm_state == self.arm_states[3]:
+            elif self.arm_state == 'leaving':
+                target_coordinates = [100.0, 50.0, 50.0]
+                self.xyz = [int(target_coordinates[0]), int(target_coordinates[1]), int(target_coordinates[2])]
+            elif self.arm_state == 'reaching':
+                self.xyz = [self.xyz[0], self.xyz[1], self.xyz[2] - 50.0]
+            elif self.arm_state == 'grip-releasing':
                 pass
 
         def __init_published_flag(self):
             for node in self.published_nodes.keys():
                 self.published_nodes[node] = False
 
-        __what_is_next_arm_state(self)
-        __swap_from_to(self)
+        __get_next_arm_state(self)
         __generate_xyz(self)
+        self.current_pos = self.next_pos
 
-        lengths = self.joint_degree.Get_Lengths(self.xyz)
-        self._tos = self.joint_degree.Get_Thetas(lengths, self.arm_state)
-
-        # self.__adjust_degree()
+        lengths = joint_degree.Get_Lengths(self.xyz)
+        self.next_pos = joint_degree.Get_Thetas(lengths, self.arm_state)
         __init_published_flag(self)
 
-    def __logger_1(self, level, comment):
-        logger.log(50, '[{}] message {}'.format(comment, ''))
-        logger.log(level, '[{}] self._tos {}'.format(comment, self._tos))
-        logger.log(level, '[{}] self.arm_state {}'.format(comment, self.arm_state))
+    def calc_waiting_time_to_next_publish(self):
+        def get_max_pulse_diff():
+            diffs = []
+            for key in self.current_pos:
+                diff = abs(self.current_pos[key] - self.next_pos[key])
+                diffs.append(diff)
+            max_deff_key = 'ch0' + str(diffs.index(max(diffs)))
+            return self.current_pos[max_deff_key], self.next_pos[max_deff_key]
+
+        times = 0
+        max_deg_from, max_deg_to = get_max_pulse_diff()
+        Log.intervally(self.ch, 40, 'from {} to {}'.format(max_deg_from, max_deg_to))
+        pulses, pitchs = node.Deg_To_Pulse(max_deg_from, max_deg_to, int(self.pitch))
+        Log.intervally(self.ch, 40, 'pulses {}\n pitchs {}'.format(pulses, pitchs))
+        if pulses[0] - pulses[1] != 0:
+            for i, pulse in enumerate(pulses):
+                if i == len(pulses) - 1:
+                    break
+                for j in range(pulses[i], pulses[i + 1], pitchs[i]):
+                    times += 1
+
+        waiting_time = float(self.sleep_sec) * times
+        Log.intervally(self.ch, 40,
+                       'waiting_time {}\nfroms {}\ntos {}'.format(waiting_time, self.current_pos, self.next_pos))
+        # Log.interval = waiting_time
+        return waiting_time
 
 
 if __name__ == '__main__':

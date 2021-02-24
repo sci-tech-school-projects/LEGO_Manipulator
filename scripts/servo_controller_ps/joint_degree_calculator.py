@@ -1,46 +1,41 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3
 import os
 from math import degrees, acos, floor
 import logging
+# from global_settings import *
 
 logger = logging.getLogger('LoggingTest')
-logger.setLevel(20)
+logger.setLevel(30)
 sh = logging.StreamHandler()
 logger.addHandler(sh)
 
 
 class Joint_Degree_Calculator():
-    # xyz = depth(Red), width(Green), height(Blue)
-    # relative joint position from later position to self position
-    # xyz_theta
-    # scale : mm
-    # pro SG90
-    # rel_pos = {
-    #     'base_link': [0.0, 0.0, 0.0, 0.0],
-    #     '_5': [0.0, 0.0, 24.0, 0.0],
-    #     '_4': [0.0, 0.0, 25.0, 0.0],
-    #     '_3': [0.0, 0.0, 44.0, 0.0],
-    #     '_2': [0.0, 0.0, 44.0, 0.0],
-    #     '_1': [0.0, 0.0, 38.0, 0.0],
-    #     '_0': [24.0, 0.0, 58.0, 0.0],
-    #     '_base_link_4': [0.0, 0.0, 49.0, 0.0],  # base_link to _4
-    #     '_1_0': [24.0, 0.0, 96.0, 0.0],  # _2 to _0
-    # }
-
-    # 996
+    # distance mm from previous link
+    #  current settings : x y z = width(x) depth(y) height(z)
     rel_pos = {
-        'base_link': [0.0, 0.0, 0.0, 0.0],
-        '_5': [0.0, 0.0, 48.2, 0.0],
-        '_4': [0.0, 0.0, 31.0, 0.0],
-        '_3': [0.0, 0.0, 61.5, 0.0],
-        '_2': [0.0, 0.0, 61.5, 0.0],
-        # '_1': [0.0, 0.0, 50.6, 0.0],
-        '_1': [0.0, 0.0, 10.0, 0.0],
-        '_0': [24.0, 0.0, 57.5, 0.0],
-        '_base_link_4': [0.0, 0.0, 79.2, 0.0],  # base_link to _4
-        # '_1_0': [24.0, 0.0, 129.0, 0.0],  # _2 to _0
-        '_1_0': [34.0, 0.0, 67.5, 0.0],  # _2 to _0
+        'base_link': [0.0, 0.0, 0.0],
+        '_5': [0.0, 0.0, 48.2],
+        '_4': [0.0, 0.0, 31.0],
+        '_3': [0.0, 0.0, 61.5],
+        '_2': [0.0, 0.0, 61.5],
+        '_1': [0.0, 0.0, 10.0],
+        '_0': [24.0, 0.0, 57.5],
+        '_base_link_4': [0.0, 0.0, 79.2],  # base_link to _4
+        '_1_0': [34.0, 0.0, 67.5],  # _2 to _0
     }  # 169.6 - 79.2 = 90.4
+
+    # _0 = 110
+    # _30 = 190
+    # _45 = 230
+    # _60 = 270
+    # _90 = 350
+    # _120 = 435
+    # _135 = 475
+    # _150 = 515
+    # _180 = 600
+    # _1_deg = (_180 - _0) // 180
+    grip = {'open': 90, 'close': 135}
 
     coordinate_after_seconds = [0.0, 0.0, 0.0]
 
@@ -82,11 +77,26 @@ class Joint_Degree_Calculator():
         return xz_sqr
 
     def Get_Thetas(self, lengths, arm_status='targeting'):
+        def _calc_XY_planar_theta(self, xz_sqr, l, l2, l3):
+            cos_theta_1_2 = self.___cut_small_number(self.cosine_theorem(l2, l, l3))
+            cos_theta_2_3 = self.___cut_small_number(self.cosine_theorem(l2, l3, l))
+            cos_theta_3_4 = self.___cut_small_number(self.cosine_theorem(l, l3, l2))
+            logger.log(20, '[Joint] _1_2, _2_3, _3_4 {} {} {}'.format(cos_theta_1_2, cos_theta_2_3, cos_theta_3_4))
+
+            Theta = degrees(acos(xz_sqr / l))
+            Theta_1_2 = ((degrees(acos(cos_theta_1_2)) + (90.0 - Theta)))
+            Theta_2_3 = (degrees(acos(cos_theta_2_3)))
+            Theta_3_4 = (degrees(acos(cos_theta_3_4)) + Theta)
+            Theta_1_2, Theta_2_3, Theta_3_4 = self.__adjust_thetas(Theta_1_2, Theta_2_3, Theta_3_4)
+
+            return [Theta_1_2, Theta_2_3, Theta_3_4]
+
         logger.log(20, '[Joint] data {}'.format(lengths))
         x, y, z, xz_sqr, h, l, l2, l3 = self.__expand_dict(lengths)
-        XY_thetas = self._calc_XY_planar_theta(xz_sqr, l, l2, l3)
+        XY_thetas = _calc_XY_planar_theta(self, xz_sqr, l, l2, l3)
         XZ_thetas = self._calc_XZ_planar_theta(xz_sqr, z, x)
 
+        logger.log(30, self._calc_grip_theta(arm_status))
         joint_degrees = {
             'ch00': self._calc_grip_theta(arm_status),
             'ch01': int(floor(XZ_thetas[0])),
@@ -105,21 +115,6 @@ class Joint_Degree_Calculator():
         for key in lengths.keys():
             array.append(lengths[key])
         return array
-
-    def _calc_XY_planar_theta(self, xz_sqr, l, l2, l3):
-
-        cos_theta_1_2 = self.___cut_small_number(self.cosine_theorem(l2, l, l3))
-        cos_theta_2_3 = self.___cut_small_number(self.cosine_theorem(l2, l3, l))
-        cos_theta_3_4 = self.___cut_small_number(self.cosine_theorem(l, l3, l2))
-        logger.log(20, '[Joint] _1_2, _2_3, _3_4 {} {} {}'.format(cos_theta_1_2, cos_theta_2_3, cos_theta_3_4))
-
-        Theta = degrees(acos(xz_sqr / l))
-        Theta_1_2 = ((degrees(acos(cos_theta_1_2)) + (90.0 - Theta)))
-        Theta_2_3 = (degrees(acos(cos_theta_2_3)))
-        Theta_3_4 = (degrees(acos(cos_theta_3_4)) + Theta)
-        Theta_1_2, Theta_2_3, Theta_3_4 = self.__adjust_thetas(Theta_1_2, Theta_2_3, Theta_3_4)
-
-        return [Theta_1_2, Theta_2_3, Theta_3_4]
 
     @staticmethod
     def __adjust_thetas(Theta_1_2, Theta_2_3, Theta_3_4):
@@ -144,10 +139,11 @@ class Joint_Degree_Calculator():
 
     def _calc_grip_theta(self, arm_status):
         # arm_states = ['targeting', 'grip-holding', 'lifting', 'reaching', 'grip-releasing']
-        if arm_status in ['grip-holding', 'lifting', 'reaching', ]:
-            return 180
+        if arm_status in ['targeting', 'grip-releasing']:
+            return self.grip['open']
         else:
-            return 135
+            return self.grip['close']
+        # else:
 
     @staticmethod
     def cosine_theorem(w, h, l):
