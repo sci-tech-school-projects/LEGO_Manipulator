@@ -7,14 +7,6 @@ from log_manager import Log_Manager
 Log = Log_Manager()
 
 
-# from global_settings import *
-#
-# logger = logging.getLogger('LoggingTest')
-# logger.setLevel(30)
-# sh = logging.StreamHandler()
-# logger.addHandler(sh)
-
-
 class Joint_Degree_Calculator():
     ch = 'jdc'
     # distance mm from previous link
