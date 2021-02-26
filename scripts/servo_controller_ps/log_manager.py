@@ -11,7 +11,7 @@ logger.addHandler(sh)
 
 class Log_Manager():
     # ch = 'ch00'
-    chs_to_log = ['pub']
+    chs_to_log = [ 'ch05']
     interval = 0
     buffer_time = 100
 
@@ -23,10 +23,10 @@ class Log_Manager():
         self.current_time = datetime.now()
         diff = self.current_time - self.last_time
         if ch in self.chs_to_log:
-            if diff.microseconds >= self.interval:
-                logger.log(level, content)
-                # if diff.microseconds >= self.interval + self.buffer_time:
-                self.last_time = self.current_time
+            # if diff.microseconds >= self.interval:
+            logger.log(level, ch + ' : ' + content)
+            # if diff.microseconds >= self.interval + self.buffer_time:
+            self.last_time = self.current_time
 
     # @property
     # def interval(self):

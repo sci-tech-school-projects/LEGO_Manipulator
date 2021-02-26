@@ -7,6 +7,7 @@ import logging
 from sub import Node
 import cv2
 from log_manager import Log_Manager
+
 # from global_settings import *
 
 joint_degree = Joint_Degree_Calculator()
@@ -27,7 +28,7 @@ class Servo_Controller():
     current_pos = {'ch00': 135, 'ch01': 90, 'ch02': 90, 'ch03': 90, 'ch04': 90, 'ch05': 90}
     next_pos = {'ch00': 90, 'ch01': 90, 'ch02': 90, 'ch03': 90, 'ch04': 90, 'ch05': 90}
 
-    arm_states = ['approaching', 'targeting', 'grip-holding', 'leaving','reaching', 'grip-releasing']
+    arm_states = ['approaching', 'targeting', 'grip-holding', 'lifting_up', 'reaching', 'grip-releasing']
     arm_states_only_grip = ['grip-holding', 'grip-releasing']
     arm_state = arm_states[-1]
 
@@ -86,18 +87,20 @@ class Servo_Controller():
             self.arm_state = self.arm_states[next_index]
 
         def __generate_xyz(self):
+            x = 120.0
             if self.arm_state == 'approaching':
-                target_coordinates = [100.0, 50.0, 50.0]
-                self.xyz = [int(target_coordinates[0]), int(target_coordinates[1]), int(target_coordinates[2])]
+                next_xyz = [x, 50.0, 50.0]
+                self.xyz = [int(next_xyz[0]), int(next_xyz[1]), int(next_xyz[2])]
             elif self.arm_state == 'targeting':
-                target_coordinates = [100.0, 100.0, 50.0]
-                self.xyz = [int(target_coordinates[0]), int(target_coordinates[1]), int(target_coordinates[2])]
+                next_xyz = [x, 0.0, 50.0]
+                self.xyz = [int(next_xyz[0]), int(next_xyz[1]), int(next_xyz[2])]
             elif self.arm_state == 'grip-holding':
-                rospy.sleep(2)
+                rospy.sleep(0)
                 pass
-            elif self.arm_state == 'leaving':
-                target_coordinates = [100.0, 50.0, 50.0]
-                self.xyz = [int(target_coordinates[0]), int(target_coordinates[1]), int(target_coordinates[2])]
+            elif self.arm_state == 'lifting_up':
+                next_xyz = [x, 50.0, 20.0]
+                self.xyz = [int(next_xyz[0]), int(next_xyz[1]),
+                            int(next_xyz[2]) + random.randrange(-30.0, 30.0, 10.0)]
             elif self.arm_state == 'reaching':
                 self.xyz = [self.xyz[0], self.xyz[1], self.xyz[2] - 50.0]
             elif self.arm_state == 'grip-releasing':
@@ -111,8 +114,8 @@ class Servo_Controller():
         __generate_xyz(self)
         self.current_pos = self.next_pos
 
-        lengths = joint_degree.Get_Lengths(self.xyz)
-        self.next_pos = joint_degree.Get_Thetas(lengths, self.arm_state)
+        Pos_Params = joint_degree.Get_Lengths(self.xyz)
+        self.next_pos = joint_degree.Get_Thetas(Pos_Params, self.arm_state)
         __init_published_flag(self)
 
     def calc_waiting_time_to_next_publish(self):
@@ -138,7 +141,8 @@ class Servo_Controller():
 
         waiting_time = float(self.sleep_sec) * times
         Log.intervally(self.ch, 40,
-                       'waiting_time {}\nfroms {}\ntos {}'.format(waiting_time, self.current_pos, self.next_pos))
+                       'waiting_time {}\n     froms {}\n     tos {}'.format(waiting_time, self.current_pos,
+                                                                            self.next_pos))
         # Log.interval = waiting_time
         return waiting_time
 
