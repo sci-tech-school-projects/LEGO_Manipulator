@@ -6,7 +6,7 @@ import Adafruit_PCA9685
 import logging
 import numpy as np
 from scipy.stats import norm
-from log_manager import Log_Manager
+from log_manager import Log_Manager, logger
 
 Log = Log_Manager()
 
@@ -52,6 +52,7 @@ class Node():
         def __smooth_move(self, ch, deg_from, deg_to, pitch, sleep_sec):
             ch_num = int(ch)
             pulses, pitchs = self.Deg_To_Pulse(deg_from, deg_to, pitch)
+
             if pulses[0] - pulses[1] != 0 or len(pulses) != 0:
                 for i, pulse in enumerate(pulses):
                     if i == len(pulses) - 1:
@@ -69,8 +70,8 @@ class Node():
 
         try:
             node_name_in_msg, def_from, deg_to, pitch, sleep_sec = __parse_message(self, data.data)
-            Log.intervally(self.node_name, 50, '[{}] parse_message message {}'.format(self.node_name, data.data))
-            Log.intervally(self.node_name, 50,
+            Log.intervally(self.node_name, 20, '[{}] parse_message message {}'.format(self.node_name, data.data))
+            Log.intervally(self.node_name, 20,
                            '[{}] {} {} {} {} '.format(self.node_name, def_from, deg_to, pitch, sleep_sec))
             if self.node_name == node_name_in_msg:
                 # __smooth_move(self, int(self.ch), def_from, deg_to, pitch, sleep_sec)
@@ -83,38 +84,34 @@ class Node():
             print("Service call failed: %s" % e)
 
     def Deg_To_Pulse(self, deg_from, deg_to, pitch):
-        def calc_remainder(self, _pul_to, _pul_from, divide_num):
+        def calc_remainder(_pul_to, _pul_from, divide_num):
             remainder = 0 if divide_num == 0 else int((_pul_to - _pul_from) % divide_num)
             return remainder
 
-        def culc_pulse_pith_set(pul_to, pul_from, remainder, pitch):
-            if (pul_to - pul_from) >= 0:
-                froms, pitchs = __calc_smooth_pulse(pul_to, pul_from, remainder, pitch)
-            else:
-                pitch = -pitch
-                froms, pitchs = __calc_smooth_pulse(pul_from, pul_to, remainder, pitch)
-            return froms, pitchs
-
-        def __calc_smooth_pulse(smaller, larger, remainder, pitch):
-            quarter = (larger - smaller) // 4
-            current_pulse = smaller
-            _1st_quarter_pulse = current_pulse + quarter
-            _2nd_quarter_pulse = _1st_quarter_pulse + quarter
-            _3rd_quarter_pulse = _2nd_quarter_pulse + quarter
-            _4th_quarter_pulse = _3rd_quarter_pulse + quarter + remainder
-            froms = [current_pulse, _1st_quarter_pulse, _2nd_quarter_pulse, _3rd_quarter_pulse, _4th_quarter_pulse]
-            pitchs = [pitch // 4, pitch // 2, pitch // 2, pitch // 4]
-            return froms, pitchs
+        def culc_pulse_pith_set(pul_from, pul_to, remainder, pitch):
+            # from to  quarter = 300 200 -25
+            # from to  quarter = 200 300 25
+            quarter = (pul_to - pul_from -remainder) // 4
+            _4th_quarter_pulse = pul_to  # 300 _ 200
+            _3rd_quarter_pulse = _4th_quarter_pulse - quarter  # 275 _ 225
+            _2nd_quarter_pulse = _3rd_quarter_pulse - quarter  # 250 _ 250
+            _1st_quarter_pulse = _2nd_quarter_pulse - quarter   # 225 _ 275
+            pulses = [pul_from, _1st_quarter_pulse, _2nd_quarter_pulse, _3rd_quarter_pulse, _4th_quarter_pulse]
+            pitch = pitch if quarter >= 0 else -pitch
+            pitchs = [pitch // 4, pitch // 4, pitch // 2, pitch // 2]
+            return pulses, pitchs
 
         _pul_from = self.pulse['0_deg'] + (float(deg_from) * self._1_deg)
         _pul_to = self.pulse['0_deg'] + (float(deg_to) * self._1_deg)
         diff = _pul_to - _pul_from
         divide_num = diff / self._1_deg
-        remainder = calc_remainder(self, _pul_to, _pul_from, divide_num)
-        Log.intervally(self.node_name, 40, "{} {} {}".format(type(_pul_from), type(remainder), type(pitch)))
+        remainder = calc_remainder(_pul_to, _pul_from, divide_num)
+        Log.intervally(self.node_name, 30, "{} {} {}".format(type(_pul_from), type(remainder), type(pitch)))
         pul_from = int(_pul_from) + remainder + pitch
         pul_to = int(_pul_to) + pitch
-        pulses, pitchs = culc_pulse_pith_set(pul_to, pul_from, remainder, pitch)
+        pulses, pitchs = culc_pulse_pith_set(pul_from, pul_to, remainder, pitch)
+        Log.intervally(self.node_name, 40, '{} pulses {}'.format(self.ch, pulses))
+        Log.intervally(self.node_name, 40, '{} pitchs {}'.format(self.ch, pitchs))
         return pulses, pitchs
 
 
