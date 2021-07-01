@@ -13,102 +13,94 @@ class Joint_Degree_Calculator():
     #  current settings : x y z = width(x) depth(y) height(z)
     rel_pos = {
         'base_link': {'width': 0.0, 'height': 0.0, 'depth': 0.0},
-        '_5': {'width': 0.0, 'height': 48.2, 'depth': 0.0},
-        '_4': {'width': 0.0, 'height': 31.0, 'depth': 0.0},
-        '_3': {'width': 0.0, 'height': 61.5, 'depth': 0.0},
-        '_2': {'width': 0.0, 'height': 61.5, 'depth': 0.0},
-        '_1': {'width': 0.0, 'height': 10.0, 'depth': 0.0},
-        '_0': {'width': 24.0, 'height': 57.5, 'depth': 0.0},
-        '_base_link_4': {'width': 0.0, 'height': 79.2, 'depth': 0.0},  # base_link to _4
-        '_1_0': {'width': 34.0, 'height': 67.5, 'depth': 0.0},  # _2 to _0
-    }  # 169.6 - 79.2 = 90.4
+        '5': {'width': 0.0, 'height': 48.2, 'depth': 0.0},
+        '4': {'width': 0.0, 'height': 31.0, 'depth': 15.4},
+        '3': {'width': 0.0, 'height': 61.5 + 50, 'depth': 0.0},
+        '2': {'width': 0.0, 'height': 61.5 + 50, 'depth': 0.0},
+        '1': {'width': -36.0, 'height': 2.0, 'depth': -25.6},
+        '0': {'width': 15.0, 'height': 65.8, 'depth': 0.0},
+        'base_link_4': {'width': 0.0, 'height': 48.2 + 31.0, 'depth': 15.4},  # base_link to _4
+        '1_0': {'width': -36.0 + 15.0, 'height': 15.0 + 65.8, 'depth': -25.6 + 0.0},  # _1 to _0
+    }
 
-    # _0 = 110
-    # _30 = 190
-    # _45 = 230
-    # _60 = 270
-    # _90 = 350
-    # _120 = 435
-    # _135 = 475
-    # _150 = 515
-    # _180 = 600
-    # _1_deg = (_180 - _0) // 180
-    grip_deg = {'open': 90, 'close': 135}
+    grip_deg = {'ch00': {'open': 98, 'close': 113},
+                'ch06': {'open': 85, 'close': 70}}
 
     def __init__(self):
         print('***** Init {}'.format(os.path.basename(__file__)))
 
     def Get_Lengths(self, xyz=None):
-        def _correct_x_in_xyz(rel_pos, xyz):
-            return [float(xyz[0] - rel_pos['_1_0']['width']), xyz[1], xyz[2]]
+        def _correct_x_in_xyz():
+            _x = xyz[0] + self.rel_pos['1_0']['width']
+            x = _x if _x >= 0 else xyz[0]
+            return [float(x), xyz[1], xyz[2]]
 
-        def _calc_XZ_surface_distance(self, xyz):  # planar : flat surface
-            xz_len = ((xyz[0] ** 2) + (xyz[2] ** 2)) ** (1 / 2)
-            return self.Cut_Small_Number(xz_len)
+        def _calc_XZ_surface_distance():  # planar : flat surface
+            xz_len = (x ** 2 + z ** 2) ** (1 / 2)
+            return round(xz_len, 2)
 
         Log.intervally(self.ch, 20, '[Joint] data {}'.format(xyz))
-        rel_pos = self.rel_pos
-        next_xyz = _correct_x_in_xyz(rel_pos, xyz)
+        [x, y, z] = _correct_x_in_xyz()
+        _h = (self.rel_pos['1_0']['height'] - self.rel_pos['base_link_4']['height']) + y  # target y = Ros Z = height
+        h = round(_h, 2)
 
-        # calc_view_from_ciel_distance
-        xz_len = _calc_XZ_surface_distance(self, next_xyz)
+        xz_len = _calc_XZ_surface_distance()  # calc_view_from_ciel_distance
+        _2_4_len = x
+        # L = round((x ** 2 + z ** 2) ** (1 / 2), 1)
+        y_xz_len = round((xz_len ** 2 + y ** 2) ** (1 / 2), 2)
 
-        x, y, z = next_xyz
-        _h = (rel_pos['_1_0']['height'] - rel_pos['_base_link_4']['height']) + y  # target y = Ros Z = height
-        h = self.Cut_Small_Number(_h)
-        _2_4_len = self.Cut_Small_Number(((xz_len ** 2) + (h ** 2)) ** (1 / 2))
-        Pos_Params = {'x': x, 'y': y, 'z': z,
-                      'xz_len': xz_len, 'h': h, '_2_4_len': _2_4_len,
-                      '_2_len': rel_pos['_2']['height'], '_3_len': rel_pos['_3']['height']}
-        Log.intervally(self.ch, 20, '[Joint] lengths {}'.format(Pos_Params))
-
+        Pos_Params = {'x': x, 'y': y, 'z': z, 'h': h,
+                      'xz_len': xz_len,
+                      '2_4_len': _2_4_len,
+                      '2_len': self.rel_pos['2']['height'],
+                      '3_len': self.rel_pos['3']['height'],
+                      'y_xz_len': y_xz_len}
         return Pos_Params
 
     def Get_Thetas(self, Pos_Params, arm_status='targeting'):
-        def __adjust_thetas(Deg_1_2, Deg_2_3):
-            adjusting_deg_value = 90
-            Deg_1_2 = Deg_1_2 - adjusting_deg_value
-            Deg_2_3 = Deg_2_3 - adjusting_deg_value
-            return Deg_1_2, Deg_2_3
+        def _calc_XY_surface_theta():
+            cos_theta_2 = round(self.Cosine_Theorem(_2_len, xz_len, _3_len), 2)
+            cos_theta_3 = round(self.Cosine_Theorem(_2_len, _3_len, xz_len), 2)
+            cos_theta_4 = round(self.Cosine_Theorem(xz_len, _3_len, _2_len), 2)
 
-        def _calc_XY_surface_theta(self, xz_len, _2_4_len, _2_len, _3_len):
-            cos_theta_1_2 = self.Cut_Small_Number(self.Cosine_Theorem(_2_len, _2_4_len, _3_len))
-            cos_theta_2_3 = self.Cut_Small_Number(self.Cosine_Theorem(_2_len, _3_len, _2_4_len))
-            cos_theta_3_4 = self.Cut_Small_Number(self.Cosine_Theorem(_2_4_len, _3_len, _2_len))
-            Log.intervally(self.ch, 20,
-                           '[Joint] _1_2, _2_3, _3_4 {} {} {}'.format(cos_theta_1_2, cos_theta_2_3, cos_theta_3_4))
-            Deg = degrees(acos(xz_len / _2_4_len))
-            Deg_1_2 = ((degrees(acos(cos_theta_1_2)) + (90.0 - Deg)))
-            Deg_2_3 = (degrees(acos(cos_theta_2_3)))
-            Deg_3_4 = (degrees(acos(cos_theta_3_4)) + Deg)
-            Deg_1_2, Deg_2_3 = __adjust_thetas(Deg_1_2, Deg_2_3)
-            return self.Floar_Int([Deg_1_2, Deg_2_3, Deg_3_4])
+            adjust_deg_for_y = degrees(acos(floor(self.Cosine_Theorem(y_xz_len, xz_len, y))))
+            # adjust_deg_for_y = 0.0
+            ch03 = degrees(acos(cos_theta_3)) + 30.0 + adjust_deg_for_y
+            ch04 = degrees(acos(cos_theta_4)) + adjust_deg_for_y
+            # ch02 = 540.0 - (ch03 + (ch04 + 90.0) + 180.0 + 90.0) + adjust_deg_for_y
+            ch02 = degrees(acos(cos_theta_2)) - 30.0 + adjust_deg_for_y
+            [ch02, ch03, ch04] = self.Floar_Int([ch02, ch03, ch04])
 
-        def _calc_XZ_surface_theta(self, xz_len, z, x):
+            return [ch02, ch03, ch04]
+
+        def _calc_XZ_surface_theta():
             Log.intervally(self.ch, 20, '[Joint]  xz_len, z, x {} {} {}'.format(xz_len, z, x))
-            cos_theta_0_5 = self.Cosine_Theorem(xz_len, z, x)
-            Deg_0_5 = degrees(acos(cos_theta_0_5))
-            Deg_1_2 = 0.0 + Deg_0_5 if Deg_0_5 < 90.0 else Deg_0_5 - 0.0
-            return self.Floar_Int([Deg_1_2, Deg_0_5])
+            cos_theta_5 = self.Cosine_Theorem(xz_len, z, x)
+            ch05 = degrees(acos(cos_theta_5))
+            ch01 = ch05
+            return self.Floar_Int([ch01, ch05])
 
-        def _calc_grip_theta(self, arm_status):
-            # arm_states = ['targeting', 'grip-holding', 'lifting', 'reaching', 'grip-releasing']
-            if arm_status in ['grip-holding', 'lifting_up', 'reaching',]:
-                return self.grip_deg['close']
+        def _calc_grip_theta():
+            if arm_status in ['grip-holding', 'lifting_up', 'reaching', ]:
+                return self.grip_deg['ch00']['close'], self.grip_deg['ch06']['close']
             else:
-                return self.grip_deg['open']
+                return self.grip_deg['ch00']['open'], self.grip_deg['ch06']['open']
 
-        # x, y, z, xz_len, h, _2_4_len, _2_len, _3_len = self.__expand_dict(Pos_Params)
-        x, y, z, xz_len, h, _2_4_len, _2_len, _3_len = [Pos_Params[key] for key in Pos_Params]
-        XY_Degs = _calc_XY_surface_theta(self, xz_len, _2_4_len, _2_len, _3_len)
-        _XZ_Degs = _calc_XZ_surface_theta(self, xz_len, z, x)
-        grip_Deg = _calc_grip_theta(self, arm_status)
+        x, y, z, h, xz_len, _2_4_len, _2_len, _3_len, y_xz_len = Pos_Params.values()
 
-        joint_degrees = {'ch00': grip_Deg, 'ch01': _XZ_Degs[0], 'ch02': XY_Degs[0],
-                         'ch03': XY_Degs[1], 'ch04': XY_Degs[2], 'ch05': _XZ_Degs[1], }
+        [ch02, ch03, ch04] = _calc_XY_surface_theta()
+        [ch01, ch05] = _calc_XZ_surface_theta()
+        grip_Deg_00, grip_Deg_06 = _calc_grip_theta()
 
-        Log.intervally(self.ch, 30, '[Joint] joint_degrees {}'.format(joint_degrees.values()))
+        joint_degrees = {'ch00': grip_Deg_00, 'ch01': ch01, 'ch02': ch02,
+                         'ch03': ch03, 'ch04': ch04, 'ch05': ch05, 'ch06': grip_Deg_06}
+
+        Log.intervally(self.ch, 40, '[Joint] joint_degrees {}'.format(joint_degrees))
         return joint_degrees
+
+    def _Adjust_Deg_For_y(self, x, y, L):
+        _adjust_deg_for_y = self.Cosine_Theorem(x, L, y)
+        return degrees(acos(_adjust_deg_for_y))
 
     @staticmethod
     def Cosine_Theorem(w, h, d):
@@ -116,10 +108,6 @@ class Joint_Degree_Calculator():
             return 0.0
         else:
             return ((w ** 2) + (h ** 2) - (d ** 2)) / (2 * w * h)
-
-    @staticmethod
-    def Cut_Small_Number(num):
-        return int(num * 100) / 100
 
     @staticmethod
     def Floar_Int(list):
@@ -131,7 +119,7 @@ class Joint_Degree_Calculator():
 if __name__ == '__main__':
     joint_degree = Joint_Degree_Calculator()
     while True:
-        _data = input(' input target coordinate : x y z')
+        _data = input('input target coordinate : x y z')
         data = _data.split(' ')
         print(data)
         for i, d in enumerate(data):
