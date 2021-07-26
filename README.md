@@ -1,3 +1,1 @@
-# service_communication
-
-![scratch](./deg_calc_theory.JPG "scratch")
+/Users/yasuyukiarakawa/Dev/AppDev/Manuals/00_Main/READMEs/ROS_arm.md

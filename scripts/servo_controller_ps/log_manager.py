@@ -4,16 +4,16 @@ import time
 from datetime import datetime
 
 logger = logging.getLogger('Log_Manager')
-logger.setLevel(40)
+logger.setLevel(10)
 sh = logging.StreamHandler()
 logger.addHandler(sh)
 
 
 class Log_Manager():
     # ch = 'ch00'
-    chs_to_log = [ 'ch05']
-    interval = 0
-    buffer_time = 100
+    TARGET_CHS = ['jdc', 'pub']
+    INTERVAL = 0
+    BUFFER_TIME = 100
 
     def __init__(self):
         self.current_time = datetime.now()
@@ -21,28 +21,9 @@ class Log_Manager():
 
     def intervally(self, ch, level, content):
         self.current_time = datetime.now()
-        diff = self.current_time - self.last_time
-        if ch in self.chs_to_log:
-            # if diff.microseconds >= self.interval:
+        if ch in self.TARGET_CHS:
             logger.log(level, ch + ' : ' + content)
-            # if diff.microseconds >= self.interval + self.buffer_time:
             self.last_time = self.current_time
-
-    # @property
-    # def interval(self):
-    #     return self.interval
-    #
-    # @interval.setter
-    # def interval(self, interval):
-    #     self.interval = interval
-    #
-    # @property
-    # def ch(self):
-    #     return self.ch
-    #
-    # @ch.setter
-    # def ch(self, ch):
-    #     self.ch = ch
 
 
 if __name__ == '__main__':

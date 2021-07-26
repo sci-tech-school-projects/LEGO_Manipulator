@@ -5,116 +5,119 @@ import os, time, sys
 import Adafruit_PCA9685
 import logging
 import numpy as np
-from scipy.stats import norm
+from common import *
+from config import *
 from log_manager import Log_Manager, logger
 
 Log = Log_Manager()
 
 
 class Node():
-    pulse = {
-        '0_deg': 120.0,
-        '180_deg': 610.0,
-    }
-
+    PULSES = {'0_DEG': 121.0, '90_DEG': 355.0, '180_DEG': 621.0, }
     # 2.722...
-    _1_deg = (pulse['180_deg'] - pulse['0_deg']) / 180.0
-
-    ch = 0
-    node_name = ''
+    PULSE_PER_DEG: float = round_3((PULSES['180_DEG'] - PULSES['90_DEG']) / 90.0)
+    CH_NUM: int = None
+    CH_STR: str = None
+    CH: str = None
+    PWM = None
+    msg = {'ch': None, 'deg_old': None, 'deg_new': None, 'pitch': None, 'sleep_sec': None}
 
     def __init__(self):
         self._get_channel_number()
-        if self.ch != None or self.ch != 'cher':
-            self.pwm = Adafruit_PCA9685.PCA9685()
-            self.pwm.set_pwm_freq(60)
+        if type(self.CH_NUM) == int:
+            self.PWM = Adafruit_PCA9685.PCA9685()
+            self.PWM.set_pwm_freq(60)
+        else:
+            pass
 
     def _get_channel_number(self):
         try:
             _ch = sys.argv[1]
-            self.ch = (_ch[-2:len(_ch)])
-            self.node_name = 'ch' + self.ch
-            print('[{}] Init ch {}'.format(self.node_name, self.ch))
-        except IndexError:
-            self.ch = None
-            self.node_name = None
+            _ch = _ch.split('__name:=')
+            ch = _ch[1]
+            print(ch)
 
-    def Loop(self):
-        rospy.init_node('listener' + self.ch, anonymous=True)
-        rospy.Subscriber('ch' + self.ch, String, self.Call_service)
+            if ch == 'publisher':
+                self.CH = 'pub'
+            else:
+                self.CH_STR = ch[-2::]
+                self.CH = 'ch' + self.CH_STR
+                self.CH_NUM = int(self.CH_STR)
+            print('[{}] Init ch {}'.format(self.CH, self.CH_NUM))
+        except IndexError:
+            raise Exception('Needed "name" in launch file for argument')
+
+    def loop(self):
+        rospy.init_node('listener' + self.CH_STR, anonymous=True)
+        rospy.Subscriber('ch' + self.CH_STR, String, self._call_service)
         rospy.spin()
 
-    def Call_service(self, data):
-        def __parse_message(self, message):
-            [node_name, def_from, deg_to, pitch, sleep_sec] = message.split(',')
-            return node_name, int(def_from), int(deg_to), int(pitch), float(sleep_sec)
-
-        def __smooth_move(self, ch, deg_from, deg_to, pitch, sleep_sec):
-            ch_num = int(ch)
-            pulses, pitchs = self.Deg_To_Pulse(deg_from, deg_to, pitch)
-
-            if pulses[0] - pulses[1] != 0 or len(pulses) != 0:
-                for i, pulse in enumerate(pulses):
-                    if i == len(pulses) - 1:
-                        break
-                    for j in range(pulses[i], pulses[i + 1], pitchs[i]):
-                        self.pwm.set_pwm(ch_num, 0, j)
-                        rospy.sleep(sleep_sec)
-
-        def __quick_move(self, ch_int, deg_from, deg_to, pitch):
-            pulses, pitchs = self.Deg_To_Pulse(deg_from, deg_to, pitch)
-            pulse = pulses[-1] - pitch
-            Log.intervally(self.node_name, 20,
-                           '[{}] node_name pulse {} {}'.format(self.node_name, ch_int, pulse, ))
-            self.pwm.set_pwm(ch_int, 0, pulse)
-
+    def _call_service(self, data):
         try:
-            node_name_in_msg, def_from, deg_to, pitch, sleep_sec = __parse_message(self, data.data)
-            Log.intervally(self.node_name, 20, '[{}] parse_message message {}'.format(self.node_name, data.data))
-            Log.intervally(self.node_name, 20,
-                           '[{}] {} {} {} {} '.format(self.node_name, def_from, deg_to, pitch, sleep_sec))
-            if self.node_name == node_name_in_msg:
-                # __smooth_move(self, int(self.ch), def_from, deg_to, pitch, sleep_sec)
-                if self.node_name != 'ch00':
-                    __smooth_move(self, int(self.ch), def_from, deg_to, pitch, sleep_sec)
-                else:
-                    __quick_move(self, int(self.ch), def_from, deg_to, pitch)
-                    # __smooth_move(self, int(self.ch), def_from, deg_to, pitch, sleep_sec)
+            self.msg = self.__parse_message(data.data)
+            if self.CH == self.msg['ch']: self.__smooth_move()
         except rospy.ServiceException as  e:
             print("Service call failed: %s" % e)
 
-    def Deg_To_Pulse(self, deg_from, deg_to, pitch):
-        def calc_remainder(_pul_to, _pul_from, divide_num):
-            remainder = 0 if divide_num == 0 else int((_pul_to - _pul_from) % divide_num)
-            return remainder
+    def __parse_message(self, message: str) -> {str, int, int, int, float}:
+        ch, deg_old, deg_new, pitch, slp_sec = message.split(',')
+        Log.intervally(self.CH, 20, '[{}] parse_message {}'.format(ch, message))
+        Log.intervally(self.CH, 20, '[{}] {} '.format(ch, [deg_old, deg_new, pitch, slp_sec]))
+        values = [str(ch), int(deg_old), int(deg_new), int(pitch), float(slp_sec)]
+        return {key: val for key, val in zip(self.msg, values)}
 
-        def culc_pulse_pith_set(pul_from, pul_to, remainder, pitch):
-            # from to  quarter = 300 200 -25
-            # from to  quarter = 200 300 25
-            quarter = (pul_to - pul_from -remainder) // 4
-            _4th_quarter_pulse = pul_to  # 300 _ 200
-            _3rd_quarter_pulse = _4th_quarter_pulse - quarter  # 275 _ 225
-            _2nd_quarter_pulse = _3rd_quarter_pulse - quarter  # 250 _ 250
-            _1st_quarter_pulse = _2nd_quarter_pulse - quarter   # 225 _ 275
-            pulses = [pul_from, _1st_quarter_pulse, _2nd_quarter_pulse, _3rd_quarter_pulse, _4th_quarter_pulse]
-            pitch = pitch if quarter >= 0 else -pitch
-            pitchs = [pitch // 4, pitch // 4, pitch // 2, pitch // 2]
-            return pulses, pitchs
+    def __smooth_move(self):
+        pulses, pitches = self.deg_to_pulse()
+        if pulses[0] - pulses[1] != 0 or len(pulses) != 0:
+            for idx, pulse in enumerate(pulses):
+                if idx == len(pulses) - 1:
+                    break
+                for step in range(pulses[idx], pulses[idx + 1], pitches[idx]):
+                    self.PWM.set_pwm(self.CH_NUM, 0, step)
+                    rospy.sleep(self.msg['sleep_sec'])
 
-        _pul_from = self.pulse['0_deg'] + (float(deg_from) * self._1_deg)
-        _pul_to = self.pulse['0_deg'] + (float(deg_to) * self._1_deg)
-        diff = _pul_to - _pul_from
-        divide_num = diff / self._1_deg
-        remainder = calc_remainder(_pul_to, _pul_from, divide_num)
-        Log.intervally(self.node_name, 30, "{} {} {}".format(type(_pul_from), type(remainder), type(pitch)))
-        pul_from = int(_pul_from) + remainder + pitch
-        pul_to = int(_pul_to) + pitch
-        pulses, pitchs = culc_pulse_pith_set(pul_from, pul_to, remainder, pitch)
-        Log.intervally(self.node_name, 40, '{} pulses {}'.format(self.ch, pulses))
-        Log.intervally(self.node_name, 40, '{} pitchs {}'.format(self.ch, pitchs))
-        return pulses, pitchs
+    def __quick_move(self):
+        pulses, pitches = self.deg_to_pulse()
+        pulse = pulses[-1] - self.msg['pitch']
+        Log.intervally(self.CH, 20, '[{}] node_name pulse {}'.format(self.CH, pulse, ))
+        self.PWM.set_pwm(self.CH, 0, pulse)
+
+    def deg_to_pulse(self, params=None):
+        self.msg = self._update_msg(params)
+        pul_old, pul_new, remainder = self._calc_divide_num()
+        pulses, pitches = self._calc_pulse_pith_set(pul_old, pul_new, remainder)
+        Log.intervally(self.CH, 30, '{} pulses {}'.format(self.CH_NUM, pulses))
+        Log.intervally(self.CH, 30, '{} pitches {}'.format(self.CH_NUM, pitches))
+        return pulses, pitches
+
+    def _update_msg(self, params):
+        if params != None:
+            for key, param in zip(['deg_old', 'deg_new', 'pitch'], params):
+                self.msg[key] = param
+        return self.msg
+
+    def _calc_divide_num(self, ):
+        _pul_old = int(self.PULSES['0_DEG'] + (self.msg['deg_old'] * self.PULSE_PER_DEG))
+        _pul_new = int(self.PULSES['0_DEG'] + (self.msg['deg_new'] * self.PULSE_PER_DEG))
+        div_num = int((_pul_new - _pul_old) / self.PULSE_PER_DEG)
+        diff = int((_pul_new - _pul_old))
+        remainder = 0 if div_num == 0 else diff % div_num
+
+        pul_old = _pul_old + remainder + self.msg['pitch']
+        pul_new = _pul_new + self.msg['pitch']
+        return pul_old, pul_new, remainder
+
+    def _calc_pulse_pith_set(self, pul_old, pul_new, remainder):
+        equally_div_num = (pul_new - pul_old - remainder) // 6
+        pul_3 = pul_new - equally_div_num  # 275 _ 250
+        pul_2 = pul_3 - equally_div_num  # 250 _ 200
+        pul_1 = pul_2 - equally_div_num * 2  # 225 _ 275
+        pulses = [pul_old, pul_1, pul_2, pul_3, pul_new]
+        pitch = self.msg['pitch'] if equally_div_num >= 0 else -self.msg['pitch']
+        pitches = [pitch // 4, pitch // 4, pitch // 2, pitch // 2]
+        return pulses, pitches
 
 
 if __name__ == "__main__":
     node = Node()
-    node.Loop()
+    node.loop()

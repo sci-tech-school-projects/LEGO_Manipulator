@@ -88,8 +88,8 @@ class Servo_Controller():
         self.__swap_from_to()
         self.__generate_xyz(self.arm_state)
 
-        lengths = self.joint_degree.Get_Lengths(self.xyz)
-        joint_degrees = self.joint_degree.Get_Thetas(lengths, self.arm_state)
+        lengths = self.joint_degree.calc_node_dists(self.xyz)
+        joint_degrees = self.joint_degree.calc_node_degs(lengths, self.arm_state)
         self._tos = joint_degrees
 
         self.__adjust_degree()
