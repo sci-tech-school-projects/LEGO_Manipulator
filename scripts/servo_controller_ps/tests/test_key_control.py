@@ -21,7 +21,7 @@ class Test_Servo_Controller(unittest.TestCase):
 
     def test___get_max_pulse_diff(self):
         degs = [self.current_degs, self.next_degs]
-        self.assertEqual(sc.___get_max_pulse_diff(degs), [41, 46])
+        self.assertEqual(sc._get_max_pulse_diff(degs), [41, 46])
 
     # def test__catch_key(self):
     #     self.assertEqual(sc.__catch_key(self.xyz),)

@@ -1,194 +1,255 @@
 #!/usr/bin/python3
-import os, time, re, sys, random
-
+import os
+import time
 import numpy as np
+import cv2
 import rospy
 from std_msgs.msg import String
-from joint_degree_calculator import Joint_Degree_Calculator
-from object_coordinate_calculator import Object_Coordinate_Calculator
-import logging
-from sub import Node
-import cv2
-from log_manager import Log_Manager
+
 from config import *
-from common import *
-from image_detection import Image_Detection
+from common import Common as cmn
+from log_manager import LogManager
+from image_detector import ImageDetection
+from joint_degree_calculator import JointDegreeCalculator
+from object_coordinate_calculator import ObjectCoordinateCalculator
+from sub import Node
 
-jdc = Joint_Degree_Calculator()
-occ = Object_Coordinate_Calculator()
-occ.get_stage_px()
-img_dtct = Image_Detection()
-occ.cap = img_dtct.cap
+if os.getenv('is_dev') == 'False':
+    print('***** Load Image_Detection')
+    img_dtct = ImageDetection()
+    print('***** Load Object_Coordinate_Calculator')
+    occ = ObjectCoordinateCalculator()
 
+print('***** Load Joint_Degree_Calculator')
+jdc = JointDegreeCalculator()
 node = Node()
-Log = Log_Manager()
-
-logger = logging.getLogger('LoggingTest')
-logger.setLevel(20)
-sh = logging.StreamHandler()
-logger.addHandler(sh)
+Log = LogManager()
 
 
-class Servo_Controller():
-    IS_DEV = True
+class ServoController:
+    IS_DEV = False if os.getenv('is_dev') == 'False' else True
     is_run_cv2 = True
-    xyz_mm = [205.0, 0.0, 0.0]
-    NODES = []
-    INITIAL_DEGS = [90, 90, 45, 45, 45, 45, 90]
+    is_init_packs = False
+    is_init_arm = False
+    is_init_stage_px = False
+
+    xyz_mm = [65.0, 10.0, -50.0]
+    ex_xyz_mm = [205.0, 10.0, 10.0]
+    INIT_POS = INIT_POS
+    NODES = {}
+    INITIAL_DEGS = [100, 90, 90, 165, 85, 90, 80]
     is_nodes_published = {ch: False for ch in CHS}
     current_degs = {ch: _deg for ch, _deg in zip(CHS, INITIAL_DEGS)}
     next_degs = {ch: _deg for ch, _deg in zip(CHS, INITIAL_DEGS)}
+    BOWLS = {0: {'x': 105, 'y': 30, 'z': 0}}
+    is_down = False
 
-    SERVO = {'MOVE_PITCH': str(4), 'SLEEP_SEC': str(0.01)}
-    ARM_STATES = ['APPROACHING', 'TARGETING', 'GRIP-CLOSED', 'LIFTING_UP', 'REACHING', 'GRIP-OPENED']
+    # SERVO = {'MOVE_PITCH': str(4), 'STEP_SEC': str(0.01)}
     GRIP_STATES = ['GRIP-CLOSED', 'GRIP-OPENED']
     arm_state = ARM_STATES[-1]
     DEBUG_CH = 'pub'
+    Hz = 1526
 
     def __init__(self):
-        if not img_dtct.is_darknet_run:
-            self.cap = cv2.VideoCapture(-1)
-        else:
-            self.cap = img_dtct.cap
         print('***** Init {}'.format(os.path.basename(__file__)))
+        self.cap = self._init_cap()
         rospy.init_node('publisher', anonymous=True)
-        for i in range(len(CHS)):
-            ch = '{:0=2}'.format(i)
-            pub = rospy.Publisher('ch' + ch, String, queue_size=10)
-            self.NODES.append(pub)
+        self.NODES = {ch: rospy.Publisher(ch, String, queue_size=10) for ch in CHS}
 
-    def main(self, ):
-        hz = 1526
-        rate = rospy.Rate(hz)
+    def _init_cap(self):
+        Log.only(self.DEBUG_CH, 40, '***** Debug mode {}'.format(self.IS_DEV))
+        if self.IS_DEV:
+            return cv2.VideoCapture(-1)
+        else:
+            return img_dtct.cap
+
+    def main(self):
+        rate = rospy.Rate(self.Hz)
         while not rospy.is_shutdown() and self.is_run_cv2:
             self._handle()
             rate.sleep()
-        self.cap.release()
-        cv2.destroyAllWindows()
+        self.__del__()
 
     def _handle(self):
-        for i in range(len(CHS)):
-            ch = 'ch' + '{:0=2}'.format(i)
-            if self.current_degs[ch] != self.next_degs[ch]:
-                message = self._compile_message(ch)
-                self.NODES[i].publish(message)
-
+        for ch in CHS:
+            message = self._compile_message(ch)
+            self.NODES[ch].publish(message)
             self.is_nodes_published[ch] = True
 
-            if False not in self.is_nodes_published.values():
+            is_false_not_in_publish = False not in self.is_nodes_published.values()
+            # is_grip_done = self.is_nodes_published['ch00'] and self.arm_state in self.GRIP_STATES
+            if is_false_not_in_publish:
+                self._init_packages()
                 self._go_to_next_state()
-            elif self.is_nodes_published['ch00'] and self.arm_state in self.GRIP_STATES:
-                self._go_to_next_state()
+                break
             else:
                 pass
+        # rospy.sleep(node.calc_sleep_time(self.current_degs, self.next_degs, self.is_down))
+        rospy.sleep(1.0)
 
     def _compile_message(self, ch: str) -> str:
         _from = str(self.current_degs[ch])
         _to = str(self.next_degs[ch])
-        message = ','.join([ch, _from, _to, self.SERVO['MOVE_PITCH'], self.SERVO['SLEEP_SEC']])
-        Log.intervally(self.DEBUG_CH, 10, '[message] {}'.format(message))
+        _step_time = self.__calc_extra_step_time(ch)
+        message = ','.join([ch, _from, _to, SERVO['STR']['MOVE_PITCH'], _step_time])
+        if ch == 'ch02':
+            Log.only(self.DEBUG_CH, 10, '[ch02 message] {}'.format(message))
         return message
+
+    def __calc_extra_step_time(self, ch):
+        if ch in ['ch03', 'ch04']:
+            self.is_down = self.xyz_mm[1] > self.ex_xyz_mm[1]
+            if self.is_down:
+                return SERVO['STR']['STEP_SEC_SLOW']
+            else:
+                return SERVO['STR']['STEP_SEC']
+        else:
+            return SERVO['STR']['STEP_SEC']
+
+    def _init_packages(self):
+        if not self.IS_DEV:
+            if not self.is_init_packs and self.is_init_arm:
+                Log.only(self.DEBUG_CH, 30, '***** init packages')
+                img_dtct.set_up_darknet()
+                occ.frame_px_1_1 = img_dtct.frame_wh
+                self.is_init_packs = True
+        else:
+            self.is_init_packs = True
 
     def _go_to_next_state(self):
         self.arm_state = self.__get_next_arm_state()
-        if self.IS_DEV:
-            self.__update_xyz_by_catch_key()
-        else:
-            img, detections, self.xyz_mm = self.__update_xyz_by_darknet()
-
+        self.xyz_mm, self.arm_state = self.__get_xyz()
         self.current_degs = self.next_degs
+        self.ex_xyz_mm = self.xyz_mm
+        node_mms = jdc.calc_node_mms(self.xyz_mm)
+        self.next_degs = jdc.calc_node_degs(node_mms, self.arm_state)
+        self.is_nodes_published = {_ch: False for _ch in CHS}
 
-        node_dists = jdc.calc_node_dists(self.xyz_mm)
-        self.next_degs = jdc.calc_node_degs(node_dists, self.arm_state)
-
-        self.__init_published_flag()
-        rospy.sleep(self.__calc_waiting_time_to_next_publish())
-
-    def __init_published_flag(self):
-        for node in self.is_nodes_published.keys():
-            self.is_nodes_published[node] = False
-
-    def __calc_waiting_time_to_next_publish(self):
-        deg_old, deg_new = self.___get_max_pulse_diff()
-        pulses, pitches = node.deg_to_pulse([deg_old, deg_new, int(self.SERVO['MOVE_PITCH'])])
-        Log.intervally(self.DEBUG_CH, 40, 'pulses {}\n pitches {}'.format(pulses, pitches))
-        times = 0
-        if pulses[0] - pulses[1] != 0:
-            for i, pulse in enumerate(pulses):
-                if i == len(pulses) - 1:
-                    break
-                for j in range(pulses[i], pulses[i + 1], pitches[i]):
-                    times += 1
-        waiting_time = float(self.SERVO['SLEEP_SEC']) * times
-        return waiting_time
-
-    def __get_next_arm_state(self, arm_state=None) -> str:
-        arm_state = self.arm_state if arm_state == None else arm_state
-        idx = self.ARM_STATES.index(arm_state)
-        next_index = 0
-        if idx != len(self.ARM_STATES) - 1:
-            next_index = idx + 1
-        arm_state = self.ARM_STATES[next_index]
+    def __get_next_arm_state(self) -> str:
+        _next_idx = ARM_STATES.index(self.arm_state) + 1
+        next_idx = 0 if _next_idx == len(ARM_STATES) else _next_idx
+        arm_state = ARM_STATES[next_idx]
         return arm_state
 
-    def __update_xyz_by_darknet(self):
-        """
-        {'start': {'x': 0, 'y': 0}, 'end': {'x': 0, 'y': 0}, 'center': {'x': 0, 'y': 0}, }
-        :return:
-        """
-        img, detections, FRAME_PX = img_dtct.main()
-        if not occ.got_darknet_frame: occ.frame_px_1_1 = FRAME_PX
-        xyz_mm = occ.get_xyz_mm(detections)
-        xyz_mm[1] = -4.0 if self.arm_state in self.ARM_STATES[1:3] else 0.0
-        return img, detections, xyz_mm
+    def __get_xyz(self) -> [list, str]:
+        if not self.is_init_packs:
+            img, self.xyz_mm = self.___init_xyz()
+        else:
+            if self.IS_DEV:
+                img = self.___update_xyz_by_catch_key()
+            else:
+                img, self.xyz_mm, label = self.___update_xyz_by_darknet()
+                self.xyz_mm = jdc.adjust_xyz_by_state(self.xyz_mm, self.arm_state, label)
+        self.___show_img(img)
+        self.xyz_mm, arm_state = self.___key_operations(self.xyz_mm, self.arm_state)
+        Log.only(self.DEBUG_CH, 20, 'xyz_mm arm_state {}'.format([self.xyz_mm, arm_state]))
+        return self.xyz_mm, arm_state
 
-    def __update_xyz_by_catch_key(self, xyz=None):
+    def ___init_xyz(self):
+        self.is_init_arm = True
+        _img = None
+        return _img, self.INIT_POS
+
+    def ___update_xyz_by_darknet(self):
+        img, xyz_mm, label = None, self.xyz_mm, None
+        if self.arm_state in ['LEAVING']:
+            img = self.____get_img()
+            detections = self.____get_detections(img)
+            xyz_mm, label = occ.get_xyz_mm(detections)
+            if label is None:
+                img, xyz_mm, label = self.___update_xyz_by_darknet()
+        return img, xyz_mm, label
+
+    def ____get_img(self):
+        img = img_dtct.read_img()
+        if not self.is_init_stage_px:
+            did_got_stage_px = occ.can_get_stage_px(img)
+            if did_got_stage_px:
+                self.is_init_stage_px = True
+            else:
+                img = self.____get_img()
+        return img
+
+    def ____get_detections(self, img):
+        detections = img_dtct.get_detections(img)
+        if len(detections) == 0:
+            detections = self.____get_detections(img)
+        return detections
+
+    def ___update_xyz_by_catch_key(self):
         # self.xyz = xyz if xyz != None else self.xyz
-        logger.log(20, '*** Input any key in w s d a r f'.format(self.xyz_mm[0], self.xyz_mm[1], self.xyz_mm[2], ))
+        Log.only(self.DEBUG_CH, 30, '*** Input any key in w s d a r f')
         ret, img = self.cap.read()
+        img = cmn.get_trimmed_img(img)
         if ret:
-            h, w, c = np.shape(img)
-            img = cv2.resize(img, (zoomed_25(w), zoomed_25(h)))
-            cv2.imshow("image", img)
+            img = cv2.resize(img, (NETWORK['W'], NETWORK['H']))
+        else:
+            img = None
+        return img
+
+    @staticmethod
+    def ___show_img(img):
+        if img is not None:
+            cv2.imshow("key_control", img)
+
+    def ___key_operations(self, xyz_mm, arm_state):
+        if self.IS_DEV:
             pushed_key = cv2.waitKey(0) % 0xFF
+            arm_state = self.____get_arm_state(arm_state)
             if pushed_key == ord('w'):
                 print('w')
-                self.xyz_mm[0] += 10.0
+                xyz_mm[0] += 10.0
             elif pushed_key == ord('s'):
-                self.xyz_mm[0] -= 10.0
+                xyz_mm[0] -= 10.0
             elif pushed_key == ord('d'):
-                self.xyz_mm[2] += 10.0
+                xyz_mm[2] += 10.0
             elif pushed_key == ord('a'):
-                self.xyz_mm[2] -= 10.0
+                xyz_mm[2] -= 10.0
             elif pushed_key == ord('r'):
-                self.xyz_mm[1] += 5.0
+                xyz_mm[1] += 5.0
             elif pushed_key == ord('f'):
-                self.xyz_mm[1] -= 5.0
+                xyz_mm[1] -= 5.0
             elif pushed_key == ord('g'):  # 'GRIP-CLOSED', 'GRIP-OPENED'
-                self.arm_state = 'GRIP-CLOSED'
+                arm_state = 'GRIP-CLOSED'
             elif pushed_key == ord('t'):
-                self.arm_state = 'GRIP-OPENED'
+                arm_state = 'GRIP-OPENED'
             elif pushed_key == ord('q'):
                 print('q')
                 self.is_run_cv2 = False
-                self.xyz_mm[0] += 1.0
+                xyz_mm[0] += 1.0
+        else:
+            pushed_key = cv2.waitKey(1) % 0xFF
+            if pushed_key == ord('z'):
+                pass
             else:
                 pass
-        logger.log(20, 'x y z {}'.format(self.xyz_mm))
-        # if xyz != None: return xyz
+        return xyz_mm, arm_state
 
-    def ___get_max_pulse_diff(self, degs=None) -> [int, int]:
-        current_degs, next_degs = [self.current_degs, self.next_degs] if None == degs else degs
-        diffs = []
-        for ch in CHS:
-            diff = abs(current_degs[ch] - next_degs[ch])
-            diffs.append(diff)
-        max_diff_key = 'ch0' + str(diffs.index(max(diffs)))
-        deg_old, deg_new = current_degs[max_diff_key], next_degs[max_diff_key]
-        Log.intervally(self.DEBUG_CH, 40, 'old {} new {}'.format(deg_old, deg_new))
-        return [deg_old, deg_new]
+    @staticmethod
+    def ____get_arm_state(arm_state):
+        GRIP_STATES = ['GRIP-CLOSED', 'GRIP-OPENED']
+        OPENED_STATES = ['APPROACHING', 'TARGETING', 'LEAVING']
+        CLOSED_STATES = ['LIFTING_UP', 'REACHING']
+        if arm_state not in GRIP_STATES:
+            if arm_state in OPENED_STATES:
+                arm_state = 'APPROACHING'
+            elif arm_state in CLOSED_STATES:
+                arm_state = 'LIFTING_UP'
+        return arm_state
+
+    def __del__(self):
+        if self.IS_DEV:
+            cv2.destroyAllWindows()
+        else:
+            print('***** Finalize {}'.format(__class__.__name__))
+            self.is_run_cv2 = False
+            # self.cap.release()
+            cv2.destroyAllWindows()
+            # del img_dtct
+            # del occ
+            # del jdc
 
 
 if __name__ == '__main__':
-    servo_controller = Servo_Controller()
+    servo_controller = ServoController()
     servo_controller.main()

@@ -11,7 +11,7 @@ class Test_Joint_Degree_Calculator(unittest.TestCase):
         self.jdc = Joint_Degree_Calculator()
 
     def test_calc_node_dists(self):
-        self.assertEqual(self.jdc.calc_node_dists(self.xyz), self.node_dists)
+        self.assertEqual(self.jdc.calc_node_mms(self.xyz), self.node_dists)
 
     def test_calc_node_degs(self):
         self.assertEqual(self.jdc.calc_node_degs(self.node_dists), self.node_degs)
